@@ -12,6 +12,9 @@ From the repository root:
 
 ```powershell
 python tools/nuke_capture/capture.py --node Constant --widget Properties.1
+python tools/nuke_capture/capture.py --fixture --widget Viewer.1
+python tools/nuke_capture/capture.py --fixture --widget DAG.1
+python tools/nuke_capture/capture.py --atlas --timeout 240
 ```
 
 Use `--exe` for another Nuke installation and `--output` for a new output
@@ -47,13 +50,42 @@ Outputs:
 - `request.json`, `started.json`, and `result.json`: request and result evidence.
 - `dialogs.json`: blocking dialogs, when present. No dialog is auto-accepted.
 
-`ok: true` means capture and metadata export succeeded. It does not establish
-that GPU-rendered regions are correct. Inspect images before using them as
-references. Viewer and node graph pixels require separate validation.
+## GPU capture and UI atlas
 
-The current wait is a bounded settling delay, not a proof that every asynchronous
-viewer operation finished. This first harness does not click arbitrary controls
-or attach to the existing scene.
+`--fixture` creates CheckerBoard2 -> Grade -> Viewer. The harness waits for
+nonblank viewer and graph surfaces before saving. `--size WIDTH HEIGHT` sets
+the main window size in logical pixels; the default is 1600 x 1000.
+
+Nuke uses native `Foundry::UI::GLWindow` surfaces inside its Qt widgets.
+The harness reads each presented OpenGL front buffer through a temporary WGL
+context, restores the previous context, and composites pixels into the Qt image.
+Native client dimensions determine readback size. Widget coordinates determine
+placement. This avoids blank GPU regions in ordinary Qt snapshots.
+`gpu.json` records surface ownership, dimensions, normalized hashes, and color counts.
+
+`--atlas` implies `--fixture`. It explores default tabs, top-level menus,
+14 representative node panels, and six workspace layouts. It sends local Qt
+events inside the isolated process; it never moves the desktop cursor.
+The atlas changes Grade brightness and position to verify live pixels.
+Failed checks or capture cases produce a nonzero launcher exit.
+
+Additional outputs:
+
+- `index.html`: searchable screenshot gallery.
+- `atlas-manifest.json`: captured states and failures.
+- `atlas/*.png` and matching JSON: images and visible control metadata.
+- `atlas/knobs-*.json`: knob labels, types, tooltips, and serialized values.
+- `menu-inventory.json`, `qt-menu-inventory.json`, `tab-inventory.json`: UI structure.
+- `verification.json`: before/after GPU hashes and change checks.
+- `progress.json`: current case while the atlas runs.
+
+Verified on installed NukeX 17.1v2: 41 images, no failed cases, both live GPU
+checks passed, all images visually reviewed. See [UI-MAP.md](UI-MAP.md) for coverage.
+
+`ok: true` means the requested checks passed. It does not prove complete UI
+coverage or pixel parity on another driver. Settling uses bounded delays;
+arbitrary asynchronous operations are not guaranteed to finish. Other versions,
+display scales, floating windows, and external plug-ins remain unverified.
 
 ## Sources
 

@@ -3,6 +3,9 @@ import json
 import os
 from pathlib import Path
 import traceback
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from gpu_capture import capture_window, crop_widget
 
 if os.environ.get('ATOMIC_CAPTURE_ROOT'):
     import nuke
@@ -10,6 +13,7 @@ if os.environ.get('ATOMIC_CAPTURE_ROOT'):
 
     root = Path(os.environ['ATOMIC_CAPTURE_ROOT'])
     request = json.loads((root / 'request.json').read_text())
+    capture_attempts = 0
     (root / 'started.json').write_text(json.dumps({'version': nuke.NUKE_VERSION_STRING}))
 
     def publish(result):
@@ -18,6 +22,8 @@ if os.environ.get('ATOMIC_CAPTURE_ROOT'):
         temp.replace(root / 'result.json')
 
     def capture():
+        global capture_attempts
+        capture_attempts += 1
         try:
             app = QtWidgets.QApplication.instance()
             dialogs = [{'class':w.metaObject().className(),'title':w.windowTitle(),
@@ -31,7 +37,16 @@ if os.environ.get('ATOMIC_CAPTURE_ROOT'):
             if len(windows) != 1:
                 raise RuntimeError('Expected one visible main window: ' + repr([(w.objectName(),w.windowTitle()) for w in windows]))
             window = windows[0]
-            image = window.grab()
+            image, gpu = capture_window(window)
+            if request.get('fixture'):
+                classes = {owner['class']:surface for surface in gpu for owner in surface['owners']}
+                for expected in ('Image_Window','DAG_Window'):
+                    if expected not in classes or classes[expected]['sample_colors'] < 8:
+                        if capture_attempts < 20:
+                            QtCore.QTimer.singleShot(500,capture)
+                            return
+                        raise RuntimeError('Reference GPU surface is missing or blank: '+expected)
+            (root/'gpu.json').write_text(json.dumps(gpu,indent=2))
             if image.isNull() or not image.save(str(root / 'main.png')):
                 raise RuntimeError('Window capture failed')
             widgets = []
@@ -54,9 +69,9 @@ if os.environ.get('ATOMIC_CAPTURE_ROOT'):
                 rect = QtCore.QRect(*request['rect'])
                 if rect.isEmpty() or not target.rect().contains(rect):
                     raise ValueError('Capture rectangle is outside the target widget')
-                selected = target.grab(rect)
+                selected = crop_widget(image,window,target,rect)
             else:
-                selected = target.grab()
+                selected = crop_widget(image,window,target)
             if selected.isNull() or not selected.save(str(root/'selected.png')):
                 raise RuntimeError('Selected capture failed')
             menus = []
@@ -71,12 +86,33 @@ if os.environ.get('ATOMIC_CAPTURE_ROOT'):
             result = {'ok':True,'version':nuke.NUKE_VERSION_STRING,
                 'size':[image.width(),image.height()], 'device_pixel_ratio':image.devicePixelRatio(),
                 'widgets':len(widgets), 'menus':len(menus)}
+            if request.get('atlas'):
+                from ui_atlas import Atlas
+                global atlas
+                atlas = Atlas(window,root,publish,result)
+                atlas.start()
+                return
         except Exception:
             result = {'ok':False,'error':traceback.format_exc()}
         publish(result)
 
     def prepare():
         try:
+            windows = [w for w in QtWidgets.QApplication.topLevelWidgets() if isinstance(w,QtWidgets.QMainWindow) and w.isVisible()]
+            if len(windows)!=1:
+                raise RuntimeError('Expected one main window during preparation')
+            windows[0].showNormal()
+            windows[0].resize(*request.get('size',[1600,1000]))
+            if request.get('fixture'):
+                checker = nuke.nodes.CheckerBoard2(name='Reference_Checker')
+                grade = nuke.nodes.Grade(name='Reference_Grade', inputs=[checker])
+                grade['multiply'].setValue(0.7)
+                viewer = nuke.nodes.Viewer(inputs=[grade])
+                nuke.show(viewer)
+                checker.setXYpos(0,0)
+                grade.setXYpos(0,100)
+                viewer.setXYpos(0,200)
+                nuke.zoom(1,[0,100])
             if request.get('node'):
                 node = nuke.createNode(request['node'], inpanel=True)
                 nuke.show(node)

@@ -29,10 +29,14 @@ def main():
     parser.add_argument('--widget', help='Capture the uniquely named visible Qt widget.')
     parser.add_argument('--rect', nargs=4, type=int, metavar=('X','Y','WIDTH','HEIGHT'))
     parser.add_argument('--timeout', type=int, default=120)
+    parser.add_argument('--fixture', action='store_true', help='Build a checkerboard, grade, and viewer reference graph.')
+    parser.add_argument('--atlas', action='store_true', help='Map menus, tabs, and representative node properties.')
+    parser.add_argument('--size', nargs=2, type=int, default=[1600,1000], metavar=('WIDTH','HEIGHT'))
     args = parser.parse_args()
     root = (args.output or Path(__file__).resolve().parent / ('capture-' + uuid.uuid4().hex[:8])).resolve()
     root.mkdir(parents=True, exist_ok=False)
-    (root / 'request.json').write_text(json.dumps({'node':args.node,'widget':args.widget,'rect':args.rect}))
+    (root / 'request.json').write_text(json.dumps({'node':args.node,'widget':args.widget,'rect':args.rect,
+        'fixture':args.fixture or args.atlas,'atlas':args.atlas,'size':args.size}))
     bootstrap = Path(__file__).resolve().parent
     user = ctypes.WinDLL('user32', use_last_error=True)
     kernel = ctypes.WinDLL('kernel32', use_last_error=True)
