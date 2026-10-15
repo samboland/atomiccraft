@@ -99,8 +99,8 @@ size and maximum duration. Each node gets property and graph PNGs, serialized
 knobs, visible controls, its actual class, and source evidence.
 
 Enumeration combines the loaded registry, shipped DLL and gizmo filenames,
-literal constructors in the shipped toolbar script, and registry additions
-discovered while loading nodes. Library files that do not create nodes remain
+literal constructors in the shipped toolbar script, bundled OFX descriptors,
+and registry additions discovered while loading nodes. Library files that do not create nodes remain
 listed with their errors. Candidate count is not node count. External OFX
 plugins are outside this inventory. Forcing the full registry loads external
 OFX plugins even in safe mode, so the catalog does not use that operation.
@@ -109,12 +109,22 @@ Nodes are unconnected and captured at their initial visible property state.
 The harness does not run rendering, tracking, training, or file workflows.
 It deletes each temporary node after capture. Session failures leave an explicit
 interrupted record; subsequent batches continue with the remaining candidates.
-No dialog is accepted automatically. Existing records are retained on resume.
+Dialogs are captured without accepting them, then the session ends. A node only
+counts as captured when its named property panel appears. Structural objects
+without a panel have `no_panel` records. Existing records are retained on resume.
 
 Open `index.html` for the gallery or `nodes.csv` for the enumerated list.
 `coverage.json` distinguishes captured types, actual classes, unavailable
 candidates, non-node libraries, errors, and interrupted attempts.
 Rebuild these outputs without launching Nuke using `--build-only`.
+
+The verified 17.1v2 sweep processed 776 candidates. It captured 604 entries
+covering 602 distinct classes, with 1,209 validated PNGs. The remaining records
+are 138 non-node libraries, 15 unavailable constructors, nine interrupted
+constructors, eight creation errors, and two objects without node panels.
+All 13 bundled OFX descriptors are listed, but their nodes cannot load in safe
+mode. Full counts and individual reasons remain in the generated catalog.
+Captures cover the initial property tab and visible region, not every tab or setting.
 
 The optional `review_catalog.py OUTPUT` script checks image hashes and dimensions
 and builds contact sheets. It requires Pillow on the host; capture does not.
@@ -128,6 +138,7 @@ python -m unittest discover -s tools/nuke_capture -p test_catalog.py
 
 - https://learn.foundry.com/nuke/developers/16.0/pythondevguide/startup.html
 - https://learn.foundry.com/nuke/content/comp_environment/configuring_nuke/command_line_operations.html
+- https://github.com/AcademySoftwareFoundation/openfx/blob/main/include/ofxCore.h
 
 AtomicCraft's selected UI and graphics stack is Rust, egui, and wgpu. This Python
 harness only gathers references from NukeX; it is not an application dependency.

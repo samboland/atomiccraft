@@ -10,7 +10,7 @@ records=[json.loads(p.read_text(encoding='utf-8')) for p in sorted((root/'nodes'
 captured=[r for r in records if r['status']=='captured']
 problems=[]
 for row in captured:
-    for role in ['properties','graph']:
+    for role in row['images']:
         data=row['images'][role]
         path=root/'nodes'/data['file']
         if hashlib.sha256(path.read_bytes()).hexdigest()!=data['sha256']:
@@ -31,7 +31,7 @@ for start in range(0,len(captured),24):
             im.thumbnail((290,415))
             page.paste(im,(x+5,y+30))
     page.save(out/f'properties-{start//24+1:02d}.jpg',quality=88)
-report={'captured':len(captured),'images_checked':len(captured)*2,'problems':problems}
+report={'captured':len(captured),'images_checked':sum(len(r['images']) for r in captured),'problems':problems}
 (root/'validation.json').write_text(json.dumps(report,indent=2),encoding='utf-8')
 print(json.dumps(report))
 if problems: raise SystemExit(1)

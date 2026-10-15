@@ -8,6 +8,7 @@ import nuke
 from PySide6 import QtCore, QtWidgets
 from gpu_capture import capture_window, crop_widget
 from ui_atlas import controls, slug
+from ofx_inventory import discover
 
 
 def write(path,data):
@@ -39,7 +40,11 @@ def enumerate_types():
                     and call.func.attr in ('createNode','createNodeLocal') and call.args
                     and isinstance(call.args[0],ast.Constant) and isinstance(call.args[0].value,str)):
                 add(call.args[0].value,str(source)+':'+str(item.lineno))
-    return {'version':nuke.NUKE_VERSION_STRING,'scope':'Loaded registry, shipped DLL/gizmo files, literal toolbar constructors; external OFX excluded',
+    ofx=discover(install)
+    for plugin in ofx:
+        add('OFX'+plugin['identifier']+'_v'+str(plugin['version'][0]),plugin['source']+' (OFX descriptor)')
+    return {'version':nuke.NUKE_VERSION_STRING,'scope':'Loaded registry, shipped DLL/gizmo files, literal toolbar constructors, bundled OFX descriptors; external OFX excluded',
+            'bundled_ofx':ofx,
             'candidates':[{'type':name,'sources':sorted(set(origins))} for name,origins in sorted(sources.items())]}
 
 
@@ -56,6 +61,13 @@ class NodeCatalog:
         if not inventory.exists(): write(inventory,enumerate_types())
         data=json.loads(inventory.read_text(encoding='utf-8'))
         if data['version']!=nuke.NUKE_VERSION_STRING: raise RuntimeError('Catalog Nuke version mismatch')
+        if 'bundled_ofx' not in data:
+            fresh=enumerate_types()
+            known={r['type'] for r in data['candidates']}
+            data['candidates']=sorted(data['candidates']+[r for r in fresh['candidates'] if r['type'] not in known],key=lambda r:r['type'])
+            data['bundled_ofx']=fresh['bundled_ofx']
+            data['scope']=fresh['scope']
+            write(inventory,data)
         self.pending=[r for r in data['candidates'] if not self.record_path(r['type']).exists()][:self.limit]
         self.next()
 
@@ -98,33 +110,48 @@ class NodeCatalog:
             self.node=getattr(nuke.nodes,name)()
             self.row['class']=self.node.Class()
             self.row['name']=self.node.name()
-            self.node.setXYpos(0,0)
+            try:
+                self.node.setXYpos(0,0)
+                self.row['graph_available']=True
+            except ValueError as e:
+                self.row['graph_available']=False
+                self.row['position_error']=str(e)
             nuke.zoom(1,[0,0])
-            nuke.show(self.node)
+            self.node.showControlPanel()
             self.row['knobs']=[]
             for key,knob in self.node.knobs().items():
-                record={'name':key,'label':knob.label(),'class':knob.Class(),'tooltip':knob.tooltip()}
-                try: record['script']=knob.toScript()
-                except Exception as e: record['error']=str(e)
+                record={'name':key}
+                for field,method in [('label','label'),('class','Class'),('tooltip','tooltip'),('script','toScript')]:
+                    try: record[field]=getattr(knob,method)()
+                    except Exception as e: record[field+'_error']=str(e)
                 self.row['knobs'].append(record)
             QtCore.QTimer.singleShot(800,self.capture)
         except Exception:
             self.row.update(status='error',reason=traceback.format_exc())
-            if 'plugin did not define ' in self.row['reason'] or 'Unknown command' in self.row['reason']:
+            if 'plugin did not define ' in self.row['reason']:
                 self.row['status']='not_node'
+            elif 'Unknown command' in self.row['reason']:
+                self.row['status']='unavailable'
             self.save()
             QtCore.QTimer.singleShot(10,self.next)
 
     def capture(self):
         try:
+            self.row['images']={}
             dialogs=[w for w in QtWidgets.QApplication.topLevelWidgets()
                      if w.isVisible() and isinstance(w,QtWidgets.QDialog)]
             if dialogs:
-                self.row['dialogs']=[{'title':w.windowTitle(),'class':w.metaObject().className()} for w in dialogs]
-                raise RuntimeError('Node opened a dialog; no dialog accepted')
+                self.row['dialogs']=[{'title':w.windowTitle(),'class':w.metaObject().className(),
+                    'labels':[label.text() for label in w.findChildren(QtWidgets.QLabel)]} for w in dialogs]
+                for i,dialog in enumerate(dialogs):
+                    pixels=dialog.grab()
+                    path=self.record_path(self.row['type']).with_suffix('.dialog-'+str(i)+'.png')
+                    if not pixels.save(str(path)): raise RuntimeError('Dialog PNG save failed')
+                    self.row['images']['dialog-'+str(i)]={'file':path.name,'size':[pixels.width(),pixels.height()],
+                        'sha256':hashlib.sha256(path.read_bytes()).hexdigest()}
             image,gpu=capture_window(self.window)
-            self.row['images']={}
             for role,widget_name in [('properties','Properties.1'),('graph','DAG.1')]:
+                if role=='graph' and not self.row.get('graph_available',True): continue
                 found=[w for w in self.window.findChildren(QtWidgets.QWidget) if w.isVisible() and w.objectName()==widget_name]
                 if len(found)!=1: raise RuntimeError('Expected one '+widget_name)
                 cropped=crop_widget(image,self.window,found[0])
@@ -133,6 +160,8 @@ class NodeCatalog:
                 self.row['images'][role]={'file':path.name,'size':[cropped.width(),cropped.height()],
                                           'sha256':hashlib.sha256(path.read_bytes()).hexdigest()}
             self.row.update(status='captured',gpu=gpu,controls=controls(self.window))
+            if not any(w.get('text')==self.row['name'] for w in self.row['controls']):
+                self.row.update(status='no_panel',reason='The created object did not expose its named node panel; images show the observed empty state')
         except Exception:
             self.row.update(status='error',reason=traceback.format_exc())
         self.save()
