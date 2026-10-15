@@ -86,6 +86,12 @@ if os.environ.get('ATOMIC_CAPTURE_ROOT'):
             result = {'ok':True,'version':nuke.NUKE_VERSION_STRING,
                 'size':[image.width(),image.height()], 'device_pixel_ratio':image.devicePixelRatio(),
                 'widgets':len(widgets), 'menus':len(menus)}
+            if request.get('explore'):
+                from ui_explore import Explorer
+                global explorer
+                explorer = Explorer(window,root,publish,result,request)
+                explorer.start()
+                return
             if request.get('atlas'):
                 from ui_atlas import Atlas
                 global atlas

@@ -30,7 +30,7 @@ The default workspace puts Viewer above Node Graph on the left, with Properties
 on the right. Background Renders and Scene Graph share the right tab group.
 Curve Editor and Dope Sheet share the lower-left tab group.
 
-## Capture coverage
+## Initial atlas coverage
 
 The verified run produced 41 images with no failed cases:
 
@@ -63,16 +63,58 @@ Use these exports to generate placeholder menus and common property controls.
 Use screenshots for spacing, colors, hierarchy, and specialized controls.
 Native class names identify reference controls; they are not Rust dependencies.
 
-## Verification and limits
+## Initial atlas verification and limits
 
 Viewer pixels changed after Grade multiply changed from 0.7 to 0.15.
 Graph pixels changed after Grade moved from (0, 100) to (180, 100).
 Normalized GPU buffer hashes and screenshots record both checks.
 All 41 images were visually reviewed through contact sheets.
 
-This captures visible initial states, not complete NukeX behavior. Nested menu
+The initial atlas captures visible initial states, not complete NukeX behavior. Nested menu
 popups, context menus, scrolled properties, other property tabs, dialogs, floating
-workspaces, monitor output, external plug-ins, and other display scales remain unverified.
+workspaces, monitor output, external plug-ins, and other display scales were not covered by the initial atlas.
 The 3D workspace uses the same 2D fixture; no populated 3D scene was tested.
 Fixed settling delays remain between atlas actions. Driver portability is untested.
 No Rust shell, compositor, or .nk importer is implemented yet.
+
+## Sequential exploration
+
+`explore.py` extends the initial atlas with eight Workspace layouts, their tabs,
+floating panes, different window sizes, nested menus, graph states, viewer
+controls, dialogs, and populated animation, Roto, tracking, and 3D fixtures.
+
+Workspace discovery includes Floating and Viewer Monitor Out. Do not scope the
+application from the default Compositing layout alone. Node properties are
+explored per type: visible and nested tabs, menus, section expanders, and scroll
+pages. Shared Node-tab controls are explored once per session.
+
+The generated `coverage.json` is the authority for captures, failures, retries,
+and missing types. A saved screenshot records an observation; it does not prove
+that the requested action changed the UI. Inspect its pixels before using it as
+behavioral evidence. `validation.json` checks PNG hashes, dimensions, and decoding.
+Empty internal chart windows are excluded from the gallery.
+
+Safe-mode OFX limitations from the node catalog still apply. Arbitrary knob
+combinations, imported-media workflows, render jobs, and external plugins are
+not established by these captures. No Rust application is implemented yet.
+
+## Implementation references
+
+Sam's decision, 2026-10-14: use ArtCraft apps as implementation references and
+reuse suitable code under their Apache-2.0 option. Prefer existing work over
+manual reimplementation. Keep NukeX captures as the reference for AtomicCraft's
+layout and interaction behavior.
+
+Candidate sources checked on 2026-10-14:
+
+- [EffectCraft](https://github.com/storytold/effectcraft): compositing, effects,
+  keyframes, and render controls.
+- [FilmCraft](https://github.com/storytold/filmcraft): video and audio handling,
+  playback, and timeline behavior.
+- [PhotoCraft](https://github.com/storytold/photocraft): image processing and
+  image-editing controls.
+- [craft-libs](https://github.com/storytold/craft-libs): shared Rust libraries.
+
+These are candidates, not selected dependencies. Before importing code, record
+the source repository and commit, check its license and file notices, and retain
+required attribution and notices. No ArtCraft source has been imported yet.

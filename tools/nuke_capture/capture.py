@@ -5,6 +5,8 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import shutil
+import hashlib
 import time
 import uuid
 
@@ -31,16 +33,29 @@ def main():
     parser.add_argument('--timeout', type=int, default=120)
     parser.add_argument('--fixture', action='store_true', help='Build a checkerboard, grade, and viewer reference graph.')
     parser.add_argument('--atlas', action='store_true', help='Map menus, tabs, and representative node properties.')
+    parser.add_argument('--explore', choices=['layouts','menus','graph','viewer','panels','dialogs','properties','interactions'])
+    parser.add_argument('--types', type=Path, help='JSON array of previously captured node types to explore.')
+    parser.add_argument('--scale', type=float, help='Qt scale multiplier for this child process only.')
     parser.add_argument('--catalog', type=Path, help='Shared node catalog directory; resume pending types.')
     parser.add_argument('--node-limit', type=int, default=60, help='Maximum node candidates per catalog session.')
     parser.add_argument('--size', nargs=2, type=int, default=[1600,1000], metavar=('WIDTH','HEIGHT'))
     args = parser.parse_args()
+    if args.scale is not None and not 0.5 <= args.scale <= 2:
+        parser.error('Scale must be between 0.5 and 2')
     root = (args.output or Path(__file__).resolve().parent / ('capture-' + uuid.uuid4().hex[:8])).resolve()
     root.mkdir(parents=True, exist_ok=False)
     (root / 'request.json').write_text(json.dumps({'node':args.node,'widget':args.widget,'rect':args.rect,
-        'fixture':args.fixture or args.atlas,'atlas':args.atlas,'size':args.size,
+        'fixture':args.fixture or args.atlas or bool(args.explore),'atlas':args.atlas,'size':args.size,
+        'explore':args.explore,'types':str(args.types.resolve()) if args.types else None,'scale':args.scale,
         'catalog':str(args.catalog.resolve()) if args.catalog else None,'node_limit':args.node_limit}))
-    bootstrap = Path(__file__).resolve().parent
+    source = Path(__file__).resolve().parent
+    bootstrap = root / 'bootstrap'
+    bootstrap.mkdir()
+    hashes={}
+    for path in source.glob('*.py'):
+        shutil.copy2(path,bootstrap/path.name)
+        hashes[path.name]=hashlib.sha256(path.read_bytes()).hexdigest()
+    (root/'source-hashes.json').write_text(json.dumps(hashes,indent=2))
     user = ctypes.WinDLL('user32', use_last_error=True)
     kernel = ctypes.WinDLL('kernel32', use_last_error=True)
     user.CreateDesktopW.argtypes = [W.LPCWSTR, W.LPCWSTR, ctypes.c_void_p, W.DWORD, W.DWORD, ctypes.c_void_p]
@@ -58,6 +73,8 @@ def main():
     env = dict(os.environ)
     env['ATOMIC_CAPTURE_ROOT'] = str(root)
     env['NUKE_PATH'] = str(bootstrap)
+    if args.scale is not None:
+        env['QT_SCALE_FACTOR'] = str(args.scale)
     (root / 'temp').mkdir()
     env['NUKE_TEMP_DIR'] = str(root / 'temp')
 

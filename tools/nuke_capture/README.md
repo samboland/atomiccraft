@@ -134,6 +134,55 @@ Run bookkeeping tests with:
 python -m unittest discover -s tools/nuke_capture -p test_catalog.py
 ```
 
+## Sequential UI exploration
+
+```powershell
+python tools/nuke_capture/explore.py --output .captures/nuke-expanded --catalog .captures/nuke-nodes
+```
+
+Runs layouts, nested menus, graph states, viewer states, populated panels,
+dialogs, and node properties in order. Only one Nuke capture process runs at a
+time. `--catalog` uses one previously captured type per actual node class,
+in batches of 40. Without it, properties use a representative list.
+
+`--sections layouts menus graph viewer panels dialogs properties interactions`
+selects the sequence. `interactions` adds pane menus, divider sizes, and playback.
+Existing run directories are retained; `--build-only` rebuilds the linked gallery
+and coverage report. A run name such as `menus-retry` records a separate retry.
+An interrupted batch is retained as evidence; use `capture.py --explore properties
+--types PATH.json --output NEW_DIRECTORY` to retry a JSON array of missing types.
+
+Layouts are discovered from Workspace. NukeX 17.1v2 exposes Compositing, Large
+Node Graph, Large Viewer, Scripting, Animation, Floating, 3D, and Viewer Monitor
+Out. Floating panes receive separate images. Empty internal chart windows do
+not count as captured UI. Alternate window sizes are captured separately.
+
+Properties include visible tabs, dropdown menus, expanded sections, and scroll
+pages. Shared Node-tab controls are explored once per session; each node still
+gets its own Node-tab image. Common nodes also exercise color, animation, link,
+and selected conditional controls. This does not enumerate every value or every
+combination of controls. Some controls appear only after loading suitable media.
+
+Only allowlisted dialog commands run. File, render, and settings dialogs are
+captured and canceled. Menu discovery never executes leaf commands. No render,
+tracking, training, save, or export is submitted. Existing unavailable OFX and
+internal node failures remain documented in the original node catalog.
+
+Each capture includes control metadata, image dimensions, and a PNG hash.
+New sessions freeze the Python capture sources in their output directory and
+record source hashes. Local Qt events stay inside the isolated Nuke process.
+`capture.py --scale FACTOR` changes Qt scaling for that process only; inspect the
+reported device pixel ratio rather than assuming the multiplier is the final scale.
+
+```powershell
+python tools/nuke_capture/review_explore.py .captures/nuke-expanded
+python -m unittest discover -s tools/nuke_capture -p test_explore.py
+```
+
+Image validation checks hashes, dimensions, and decoding. Contact sheets support
+visual inspection; their creation does not establish visual correctness. See
+`coverage.json` for historical failures, recovered cases, and missing property types.
+
 ## API references
 
 - https://learn.foundry.com/nuke/developers/16.0/pythondevguide/startup.html
