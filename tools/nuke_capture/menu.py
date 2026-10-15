@@ -103,6 +103,12 @@ if os.environ.get('ATOMIC_CAPTURE_ROOT'):
                 raise RuntimeError('Expected one main window during preparation')
             windows[0].showNormal()
             windows[0].resize(*request.get('size',[1600,1000]))
+            if request.get('catalog'):
+                from node_catalog import NodeCatalog
+                global catalog
+                catalog = NodeCatalog(windows[0],Path(request['catalog']),publish,request.get('node_limit',60))
+                catalog.start()
+                return
             if request.get('fixture'):
                 checker = nuke.nodes.CheckerBoard2(name='Reference_Checker')
                 grade = nuke.nodes.Grade(name='Reference_Grade', inputs=[checker])

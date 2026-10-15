@@ -87,7 +87,44 @@ coverage or pixel parity on another driver. Settling uses bounded delays;
 arbitrary asynchronous operations are not guaranteed to finish. Other versions,
 display scales, floating windows, and external plug-ins remain unverified.
 
-## Sources
+## Enumerate and capture node types
+
+```powershell
+python tools/nuke_capture/catalog.py --output .captures/nuke-nodes
+```
+
+This resumes an existing catalog or creates a new one. Each isolated session
+processes up to 60 candidates. `--batch-size` and `--timeout` control session
+size and maximum duration. Each node gets property and graph PNGs, serialized
+knobs, visible controls, its actual class, and source evidence.
+
+Enumeration combines the loaded registry, shipped DLL and gizmo filenames,
+literal constructors in the shipped toolbar script, and registry additions
+discovered while loading nodes. Library files that do not create nodes remain
+listed with their errors. Candidate count is not node count. External OFX
+plugins are outside this inventory. Forcing the full registry loads external
+OFX plugins even in safe mode, so the catalog does not use that operation.
+
+Nodes are unconnected and captured at their initial visible property state.
+The harness does not run rendering, tracking, training, or file workflows.
+It deletes each temporary node after capture. Session failures leave an explicit
+interrupted record; subsequent batches continue with the remaining candidates.
+No dialog is accepted automatically. Existing records are retained on resume.
+
+Open `index.html` for the gallery or `nodes.csv` for the enumerated list.
+`coverage.json` distinguishes captured types, actual classes, unavailable
+candidates, non-node libraries, errors, and interrupted attempts.
+Rebuild these outputs without launching Nuke using `--build-only`.
+
+The optional `review_catalog.py OUTPUT` script checks image hashes and dimensions
+and builds contact sheets. It requires Pillow on the host; capture does not.
+Run bookkeeping tests with:
+
+```powershell
+python -m unittest discover -s tools/nuke_capture -p test_catalog.py
+```
+
+## API references
 
 - https://learn.foundry.com/nuke/developers/16.0/pythondevguide/startup.html
 - https://learn.foundry.com/nuke/content/comp_environment/configuring_nuke/command_line_operations.html
