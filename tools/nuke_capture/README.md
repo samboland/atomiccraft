@@ -22,7 +22,9 @@ directory. Existing output directories are rejected. `--timeout` defaults to
 120 seconds. A separate GUI license may be needed under some license setups.
 
 Each run uses a disposable in-memory scene and temporary directory. The
-launcher terminates only the process it created and closes its desktop handle.
+launcher terminates its owned process tree and closes its desktop handle.
+Nuke starts suspended and joins a Windows job before it runs. Closing that job
+also removes crash reporters and workers that outlive the capture process.
 Nuke's `--safe` mode excludes user startup scripts and OFX plug-ins. The capture
 script is passed explicitly on the command line. It does not install a global
 startup script or change global environment variables.

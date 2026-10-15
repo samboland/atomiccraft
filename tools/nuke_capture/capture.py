@@ -9,6 +9,7 @@ import shutil
 import hashlib
 import time
 import uuid
+from process_job import ProcessJob
 
 class STARTUPINFO(ctypes.Structure):
     _fields_ = [('cb', W.DWORD), ('lpReserved', W.LPWSTR), ('lpDesktop', W.LPWSTR),
@@ -66,6 +67,8 @@ def main():
     kernel.WaitForSingleObject.argtypes = [W.HANDLE, W.DWORD]
     kernel.TerminateProcess.argtypes = [W.HANDLE, W.UINT]
     kernel.CloseHandle.argtypes = [W.HANDLE]
+    kernel.ResumeThread.argtypes = [W.HANDLE]
+    kernel.ResumeThread.restype = W.DWORD
     desktop_name = 'AtomicCapture_' + uuid.uuid4().hex
     desktop = user.CreateDesktopW(desktop_name, None, None, 0, 0x01FF, None)
     if not desktop:
@@ -86,8 +89,14 @@ def main():
     si.cb = ctypes.sizeof(si)
     si.lpDesktop = 'winsta0\\' + desktop_name
     pi = PROCESS_INFORMATION()
+    job = None
     try:
-        if not kernel.CreateProcessW(exe, cmd, None, None, False, 0x400, block, str(root), ctypes.byref(si), ctypes.byref(pi)):
+        job = ProcessJob()
+        # Suspend before assignment so crash reporters and workers cannot escape ownership.
+        if not kernel.CreateProcessW(exe, cmd, None, None, False, 0x404, block, str(root), ctypes.byref(si), ctypes.byref(pi)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        job.assign(pi.hProcess)
+        if kernel.ResumeThread(pi.hThread) == 0xFFFFFFFF:
             raise ctypes.WinError(ctypes.get_last_error())
         print(json.dumps({'root':str(root), 'pid':pi.dwProcessId, 'desktop':desktop_name}), flush=True)
         deadline = time.monotonic() + args.timeout
@@ -105,6 +114,9 @@ def main():
     finally:
         if pi.hProcess:
             kernel.TerminateProcess(pi.hProcess, 0)
+        if job:
+            job.close()
+        if pi.hProcess:
             kernel.WaitForSingleObject(pi.hProcess, 5000)
             kernel.CloseHandle(pi.hThread)
             kernel.CloseHandle(pi.hProcess)
