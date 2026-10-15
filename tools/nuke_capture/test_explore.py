@@ -42,5 +42,14 @@ class CoverageTests(unittest.TestCase):
             self.assertEqual(result['unresolved_failures'],[])
             self.assertEqual(result['recovered_failures'][0]['recovered_in'],'properties-retry')
 
+    def test_review_exclusion_keeps_run_but_removes_mislabeled_images(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp); run=root/'menus-retry'; run.mkdir()
+            (root/'review-exclusions.json').write_text(json.dumps({'menus-retry':'Wrong submenu'}))
+            (run/'atlas-manifest.json').write_text(json.dumps({'entries':[{'title':'Wrong'}],'failures':[]}))
+            result=build(root)
+            self.assertEqual(result['captures'],0)
+            self.assertEqual(result['runs'][0]['excluded_reason'],'Wrong submenu')
+
 
 if __name__=='__main__': unittest.main()

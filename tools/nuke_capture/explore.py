@@ -9,6 +9,7 @@ import sys
 
 def build(root):
     entries=[]; failures=[]; runs=[]; requested_types=[]; captured_types=[]
+    exclusions=json.loads((root/'review-exclusions.json').read_text(encoding='utf-8')) if (root/'review-exclusions.json').exists() else {}
     planned_types=[]
     for path in root.glob('properties-*-types.json'):
         planned_types.extend(json.loads(path.read_text(encoding='utf-8')))
@@ -27,6 +28,9 @@ def build(root):
         if (directory/'requested-types.json').exists():
             requested_types.extend(json.loads((directory/'requested-types.json').read_text(encoding='utf-8')))
         failures.extend(dict(f,run=directory.name) for f in data['failures'])
+        if directory.name in exclusions:
+            runs[-1]['excluded_reason']=exclusions[directory.name]
+            continue
         for e in data['entries']:
             evidence=json.loads((directory/'atlas'/e['evidence']).read_text(encoding='utf-8'))
             if evidence.get('widget_class')=='Foundry::UI::Chart' and not evidence.get('controls'): continue
@@ -35,6 +39,7 @@ def build(root):
             entries.append(dict(e,run=directory.name,path=directory.name+'/atlas/'+e['image']))
     unresolved=[]; recovered=[]
     for failure in failures:
+        if failure['run'] in exclusions: continue
         case=failure['case']
         if failure['run'].startswith('properties') and case.startswith('Properties '):
             case=case[len('Properties '):]+' initial'
@@ -43,7 +48,7 @@ def build(root):
                  and (e['title']==case or e['title'].startswith(case+' '))]
         if retries: recovered.append(dict(failure,recovered_in=retries[0]['run']))
         else: unresolved.append(failure)
-    report={'runs':runs,'captures':len(entries),'failures':failures,
+    report={'runs':runs,'captures':len(entries),'failures':failures,'excluded_runs':exclusions,
             'unresolved_failures':unresolved,'recovered_failures':recovered,'entries':entries,
             'property_types_requested':sorted(set(requested_types)),
             'property_types_planned':sorted(set(planned_types)),

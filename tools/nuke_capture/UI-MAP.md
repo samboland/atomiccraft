@@ -98,6 +98,33 @@ Safe-mode OFX limitations from the node catalog still apply. Arbitrary knob
 combinations, imported-media workflows, render jobs, and external plugins are
 not established by these captures. No Rust application is implemented yet.
 
+## Expanded capture results, 2026-10-15
+
+The sequential sweep produced 8,105 validated images and 7,606 distinct named
+states. It captured property panels for all 602 actual classes from the earlier
+successful node catalog, including tabs, available menus, and scroll pages.
+This does not include unavailable constructors from that catalog.
+
+Coverage includes all eight Workspace layouts, 72 menu states, 33 preferences
+categories, graph context and filtered search, group navigation, two viewers,
+playback, divider sizes, populated animation and Roto controls, a tracker row,
+and a modern Scene Graph with visible geometry. Process-only scale runs passed
+at DPR 1 (1600x1000), 1.5 (2400x1500), and 2 (3200x2000).
+
+All 8,105 PNGs passed hash, dimensions, and decoding checks. Contact sheets and
+selected detailed images were visually inspected, not every secondary control
+image. Two menu runs had mislabeled parent images and were excluded from the
+gallery. Their raw evidence remains available. Seven harness tests passed.
+
+Seven popup states remain missing: the empty recent-file menu, Cryptomatte,
+FieldVolume, LiveInput, OCIONamedTransform, and two UnrealReader dropdowns.
+Real-media workflows, populated render queues, arbitrary conditional states,
+custom docking transitions, unavailable OFX, and external plugins remain gaps.
+
+Local evidence: `C:/Users/sam/.codex/scratchpad/2026-10-14/we/outputs/nukex-expanded-ui/`.
+Open `index.html`; see `coverage.json`, `validation.json`, `visual-review.json`,
+and `review-exclusions.json` for results and limits.
+
 ## Implementation references
 
 Sam's decision, 2026-10-14: use ArtCraft apps as implementation references and

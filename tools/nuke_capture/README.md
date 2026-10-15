@@ -181,7 +181,9 @@ python -m unittest discover -s tools/nuke_capture -p test_explore.py
 
 Image validation checks hashes, dimensions, and decoding. Contact sheets support
 visual inspection; their creation does not establish visual correctness. See
-`coverage.json` for historical failures, recovered cases, and missing property types.
+`coverage.json` for historical failures, recovered cases, and missing property types. A `review-exclusions.json` object maps rejected run
+names to reasons. Excluded runs retain evidence but do not contribute images
+to the gallery or unresolved-failure totals.
 
 ## API references
 

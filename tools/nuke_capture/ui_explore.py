@@ -9,7 +9,7 @@ import traceback
 from pathlib import Path
 import nuke
 from PySide6 import QtCore, QtGui, QtWidgets
-from shiboken6 import getCppPointer
+from shiboken6 import getCppPointer, isValid
 from ui_atlas import Atlas, controls, dump, slug
 from gpu_capture import capture_window
 
@@ -21,6 +21,7 @@ class Explorer(Atlas):
         self.section=request['explore']
         self.observations=[]
         self.seen_menus=set()
+        self.menu_signatures={}
         self.current_node=None
 
     def checkpoint(self):
@@ -54,7 +55,7 @@ class Explorer(Atlas):
     def scene(self,title):
         self.save_widget(title,self.window,True)
         extras=[w for w in QtWidgets.QApplication.topLevelWidgets()
-                if w.isVisible() and w is not self.window and w.width()>30 and w.height()>30
+                if isValid(w) and w.isVisible() and w is not self.window and w.width()>30 and w.height()>30
                 and w.metaObject().className()!='Foundry::UI::Chart']
         for i,w in enumerate(extras):
             self.save_widget(title+' floating '+str(i)+' '+w.windowTitle(),w,
@@ -68,7 +69,7 @@ class Explorer(Atlas):
 
     def close_popups(self):
         for w in QtWidgets.QApplication.topLevelWidgets():
-            if w.isVisible() and (isinstance(w,QtWidgets.QMenu) or w.metaObject().className()=='DAGNodeChooser'): w.hide()
+            if isValid(w) and w.isVisible() and (isinstance(w,QtWidgets.QMenu) or w.metaObject().className()=='DAGNodeChooser'): w.hide()
         popup=QtWidgets.QApplication.activePopupWidget()
         if popup: popup.hide()
 
@@ -154,14 +155,19 @@ class Explorer(Atlas):
     def plan_menus(self):
         for a in self.window.menuBar().actions():
             if a.menu() and a.isVisible():
-                self.add('Menu '+a.text(),lambda t=a.text():self.open_menu(t),
-                         lambda t=a.text():self.menu_tree(t,self.visible_menu()))
+                self.add('Menu '+a.text(),lambda t=a.text():(self.close_popups(),self.open_menu(t)),
+                         lambda t=a.text():self.menu_tree(t,self.active_menu()))
         for b in self.window.findChildren(QtWidgets.QToolButton):
             if b.isVisible() and b.metaObject().className()=='NukeToolButton':
                 path='Nodes/'+b.text()
-                self.add(path,lambda p=path:self.open_menu_path(p),lambda p=path:self.menu_tree(p,self.active_menu()))
+                self.add(path,lambda t=b.text():self.open_toolbar_menu(t),lambda p=path:self.menu_tree(p,self.active_menu()))
 
     def menu_tree(self,path,menu):
+        if len(path.split('/'))>8: raise RuntimeError('Menu depth exceeded: '+path)
+        signature=tuple(a.text() for a in menu.actions())
+        if any(path.startswith(parent+'/') and signature==value for parent,value in self.menu_signatures.items()):
+            raise RuntimeError('Submenu still has parent contents: '+path)
+        self.menu_signatures[path]=signature
         self.save_widget(path,menu)
         items=[{'text':a.text(),'submenu':bool(a.menu()),'enabled':a.isEnabled(),
                 'shortcut':a.shortcut().toString()} for a in menu.actions()]
@@ -172,39 +178,36 @@ class Explorer(Atlas):
             key=path+'/'+action.text()
             if child and key not in self.seen_menus:
                 self.seen_menus.add(key)
-                jobs.append((key,lambda p=key:self.open_menu_path(p),
+                jobs.append((key,lambda m=menu,t=action.text():self.open_child_menu(m,t),
                              lambda p=key:self.menu_tree(p,self.active_menu())))
-        self.close_popups()
+        jobs.append(('Close '+path,lambda m=menu:m.hide() if isValid(m) else None,lambda:None))
         self.prepend(jobs)
+
+    def open_child_menu(self,menu,text):
+        if not isValid(menu): raise RuntimeError('Parent menu was deleted')
+        matches=[a for a in menu.actions() if a.text()==text]
+        if len(matches)!=1: raise RuntimeError('Missing submenu '+text)
+        position=menu.mapToGlobal(menu.actionGeometry(matches[0]).topRight())
+        child=matches[0].menu()
+        if not child: raise RuntimeError('Action has no submenu '+text)
+        child.popup(position)
 
     def active_menu(self):
         menu=QtWidgets.QApplication.activePopupWidget()
         if not isinstance(menu,QtWidgets.QMenu): raise RuntimeError('No active submenu')
         return menu
 
-    def open_menu_path(self,path):
-        parts=path.split('/')
+    def open_toolbar_menu(self,title):
         self.close_popups()
-        if parts[0]=='Nodes':
-            found=[b for b in self.window.findChildren(QtWidgets.QToolButton)
-                   if b.isVisible() and b.metaObject().className()=='NukeToolButton' and b.text()==parts[1]]
-            if len(found)!=1: raise RuntimeError('Missing toolbar category '+parts[1])
-            found[0].click()
-            tail=parts[2:]
-        else:
-            self.open_menu(parts[0])
-            tail=parts[1:]
-        for text in tail:
-            menu=self.active_menu()
-            matches=[a for a in menu.actions() if a.text()==text and a.menu()]
-            if len(matches)!=1: raise RuntimeError('Missing submenu '+text)
-            menu.setActiveAction(matches[0])
-            self.key(menu,QtCore.Qt.Key_Right)
-            QtWidgets.QApplication.processEvents()
+        found=[b for b in self.window.findChildren(QtWidgets.QToolButton)
+               if b.isVisible() and b.metaObject().className()=='NukeToolButton' and b.text()==title]
+        if len(found)!=1: raise RuntimeError('Missing toolbar category '+title)
+        # click() enters a nested Qt loop. Queued jobs open child menus there.
+        found[0].click()
 
     def graph_widget(self):
         found=[w for w in self.window.findChildren(QtWidgets.QWidget)
-               if w.isVisible() and w.metaObject().className()=='DAG_Window']
+               if isValid(w) and w.isVisible() and w.metaObject().className()=='DAG_Window']
         if len(found)!=1: raise RuntimeError('Expected one DAG_Window')
         return found[0]
 
@@ -240,8 +243,9 @@ class Explorer(Atlas):
             nuke.nodes.Dot(name='Reference_Dot',inputs=[nuke.toNode('Reference_Grade')],xpos=180,ypos=100)
             group=nuke.nodes.Group(name='Reference_Group',xpos=350,ypos=100)
             with group:
-                source=nuke.nodes.Input()
-                nuke.nodes.Output(inputs=[nuke.nodes.Blur(inputs=[source])])
+                source=nuke.nodes.Input(xpos=0,ypos=0)
+                blur=nuke.nodes.Blur(inputs=[source],xpos=0,ypos=90)
+                nuke.nodes.Output(inputs=[blur],xpos=0,ypos=180)
             nuke.zoom(0.7,[150,100])
         self.add('Backdrop dot and group',extras)
         self.add('Group properties',lambda:nuke.toNode('Reference_Group').showControlPanel())
@@ -255,11 +259,12 @@ class Explorer(Atlas):
         QtWidgets.QApplication.sendEvent(w,QtGui.QMouseEvent(kind,p,QtCore.QPointF(w.mapToGlobal(p.toPoint())),button,buttons,QtCore.Qt.NoModifier))
 
     def search_blur(self):
-        found=[w for w in QtWidgets.QApplication.topLevelWidgets() if w.isVisible() and w.metaObject().className()=='DAGNodeChooser']
+        found=[w for w in QtWidgets.QApplication.topLevelWidgets() if isValid(w) and w.isVisible() and w.metaObject().className()=='DAGNodeChooser']
         if len(found)!=1: raise RuntimeError('Node chooser did not appear')
         edits=found[0].findChildren(QtWidgets.QLineEdit)
         if len(edits)!=1: raise RuntimeError('Expected one node search field')
         edits[0].setText('Blur')
+        edits[0].textEdited.emit('Blur')
 
     def plan_viewer(self):
         viewer=nuke.activeViewer().node()
@@ -284,7 +289,7 @@ class Explorer(Atlas):
 
     def viewer_button(self,tooltip):
         buttons=[w for w in self.target('Viewer.1').findChildren(QtWidgets.QAbstractButton)
-                 if w.isVisible() and w.toolTip().startswith(tooltip)]
+                 if isValid(w) and w.isVisible() and w.toolTip().startswith(tooltip)]
         if len(buttons)!=1: raise RuntimeError('Expected viewer button: '+tooltip)
         buttons[0].click()
 
@@ -342,14 +347,15 @@ class Explorer(Atlas):
             item.invoke()
             return
         parent,label=path.split('/',1)
-        menu=self.find_menu(parent)
+        self.open_menu(parent)
+        menu=self.active_menu()
         matches=[a for a in menu.actions() if a.text()==label and a.isEnabled()]
         if len(matches)!=1: raise RuntimeError('Menu command unavailable: '+path)
         matches[0].trigger()
 
     def capture_dialog(self,title):
         windows=[w for w in QtWidgets.QApplication.topLevelWidgets()
-                 if w.isVisible() and isinstance(w,QtWidgets.QDialog)]
+                 if isValid(w) and w.isVisible() and isinstance(w,QtWidgets.QDialog)]
         self.scene(title)
         if not windows:
             self.observations.append({'case':title,'note':'No QDialog; captured the observed main-window state'})
@@ -364,6 +370,19 @@ class Explorer(Atlas):
                             item=iterator.value(); t=title+' / '+item.text(0)
                             jobs.append((t,lambda tree=tree,item=item:tree.setCurrentItem(item),lambda t=t,w=w:self.save_widget(t,w)))
                             iterator+=1
+                    for tree in w.findChildren(QtWidgets.QTreeView):
+                        if isinstance(tree,QtWidgets.QTreeWidget): continue
+                        model=tree.model()
+                        def walk(parent=QtCore.QModelIndex(),prefix=''):
+                            for row in range(model.rowCount(parent)):
+                                index=model.index(row,0,parent)
+                                label=str(model.data(index,QtCore.Qt.DisplayRole))
+                                path=prefix+'/'+label if prefix else label
+                                persistent=QtCore.QPersistentModelIndex(index)
+                                t=title+' / '+path
+                                jobs.append((t,lambda tree=tree,index=persistent:self.select_tree_page(tree,index),lambda t=t,w=w:self.save_widget(t,w)))
+                                walk(index,path)
+                        walk()
                 for bi,b in enumerate(w.findChildren(QtWidgets.QTabBar)):
                     if b.isVisible():
                         for i in range(b.count()):
@@ -371,6 +390,11 @@ class Explorer(Atlas):
                             jobs.append((t,lambda b=b,i=i:b.setCurrentIndex(i),lambda t=t,w=w:self.save_widget(t,w)))
                 jobs.append(('Cancel '+title,w.reject,lambda:None))
             self.prepend(jobs)
+
+    def select_tree_page(self,tree,index):
+        index=QtCore.QModelIndex(index)
+        tree.setCurrentIndex(index)
+        tree.clicked.emit(index)
 
     def plan_dialogs(self):
         nuke.nodes.Write(name='Reference_Write',inputs=[nuke.toNode('Reference_Grade')])
@@ -417,8 +441,8 @@ class Explorer(Atlas):
         for i,box in enumerate(scope.findChildren(QtWidgets.QComboBox)):
             if not box.isVisible() or not box.isEnabled(): continue
             title=prefix+' dropdown '+str(i)+' '+box.currentText()
-            jobs.append((title,box.showPopup,lambda t=title,b=box:self.save_widget(t,b.view().window())))
-            jobs.append(('Close '+title,box.hidePopup,lambda:None))
+            jobs.append((title,box.showPopup,lambda t=title,b=box:self.capture_combo(t,b)))
+            jobs.append(('Close '+title,lambda b=box:(b.hidePopup(),self.close_popups()),lambda:None))
         for i,bar in enumerate(scope.findChildren(QtWidgets.QScrollBar)):
             if not bar.isVisible() or bar.maximum()<=bar.minimum(): continue
             original=bar.value()
@@ -431,15 +455,24 @@ class Explorer(Atlas):
             jobs.append(('Restore scroll',lambda b=bar,v=original:b.setValue(v),lambda:None))
         self.prepend(jobs)
 
+    def capture_combo(self,title,box):
+        popup=QtWidgets.QApplication.activePopupWidget()
+        if popup and isValid(popup) and popup.isVisible():
+            self.save_widget(title,popup)
+        elif box.view().window().isVisible():
+            self.save_widget(title,box.view().window())
+        else:
+            self.capture_popups(title)
+
     def capture_popups(self,title):
-        menus=[w for w in QtWidgets.QApplication.topLevelWidgets() if w.isVisible() and isinstance(w,QtWidgets.QMenu)]
+        menus=[w for w in QtWidgets.QApplication.topLevelWidgets() if isValid(w) and w.isVisible() and isinstance(w,QtWidgets.QMenu)]
         if not menus: raise RuntimeError('No visible popup for '+title)
         for i,w in enumerate(menus): self.save_widget(title+' '+str(i),w)
 
     def capture_control_state(self,title,scope):
         self.save_widget(title,scope)
         for i,w in enumerate(QtWidgets.QApplication.topLevelWidgets()):
-            if w.isVisible() and isinstance(w,(QtWidgets.QMenu,QtWidgets.QDialog)):
+            if isValid(w) and w.isVisible() and isinstance(w,(QtWidgets.QMenu,QtWidgets.QDialog)):
                 self.save_widget(title+' popup '+str(i),w)
 
     def plan_properties(self):
@@ -462,7 +495,7 @@ class Explorer(Atlas):
         self.current_node.showControlPanel()
 
     def property_details(self,kind):
-        dialogs=[w for w in QtWidgets.QApplication.topLevelWidgets() if w.isVisible() and isinstance(w,QtWidgets.QDialog)]
+        dialogs=[w for w in QtWidgets.QApplication.topLevelWidgets() if isValid(w) and w.isVisible() and isinstance(w,QtWidgets.QDialog)]
         for i,w in enumerate(dialogs):
             self.save_widget(kind+' dialog '+str(i),w)
             w.reject()
