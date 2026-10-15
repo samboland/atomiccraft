@@ -35,9 +35,12 @@ def build(root):
             entries.append(dict(e,run=directory.name,path=directory.name+'/atlas/'+e['image']))
     unresolved=[]; recovered=[]
     for failure in failures:
+        case=failure['case']
+        if failure['run'].startswith('properties') and case.startswith('Properties '):
+            case=case[len('Properties '):]+' initial'
         retries=[e for e in entries if e['run']>failure['run']
                  and e['run'].split('-')[0]==failure['run'].split('-')[0]
-                 and (e['title']==failure['case'] or e['title'].startswith(failure['case']+' '))]
+                 and (e['title']==case or e['title'].startswith(case+' '))]
         if retries: recovered.append(dict(failure,recovered_in=retries[0]['run']))
         else: unresolved.append(failure)
     report={'runs':runs,'captures':len(entries),'failures':failures,

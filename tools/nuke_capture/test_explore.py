@@ -29,5 +29,18 @@ class CoverageTests(unittest.TestCase):
             self.assertEqual(result['captures'],0)
             self.assertFalse(result['runs'][0]['ended'])
 
+    def test_property_retry_recovers_initial_panel_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            for name,entries,failures in [
+                ('properties-00',[],[{'case':'Properties Blur','error':'Panel missing'}]),
+                ('properties-retry',[{'title':'Blur initial','image':'blur.png','evidence':'blur.json'}],[])]:
+                run=root/name; atlas=run/'atlas'; atlas.mkdir(parents=True)
+                (atlas/'blur.json').write_text('{}')
+                (run/'atlas-manifest.json').write_text(json.dumps({'entries':entries,'failures':failures}))
+            result=build(root)
+            self.assertEqual(result['unresolved_failures'],[])
+            self.assertEqual(result['recovered_failures'][0]['recovered_in'],'properties-retry')
+
 
 if __name__=='__main__': unittest.main()
